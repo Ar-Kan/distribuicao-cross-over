@@ -18,6 +18,13 @@ knit: >
   })
 ---
 
+
+<style type="text/css">
+table caption {
+  color: #6d7377;
+}
+</style>
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
   echo = TRUE,
@@ -26,6 +33,21 @@ knitr::opts_chunk$set(
   fig.width = 8,
   fig.height = 4.8
 )
+
+tabela_html <- function(x, digits, col.names, caption) {
+  knitr::kable(
+    x,
+    format = "html",
+    digits = digits,
+    col.names = col.names,
+    caption = caption
+  ) |>
+    kableExtra::kable_styling(
+      bootstrap_options = c("striped", "bordered", "hover", "condensed"),
+      full_width = FALSE,
+      position = "left"
+    )
+}
 ```
 
 # Objetivo
@@ -88,7 +110,12 @@ dados_resumo <- data.frame(
   )
 )
 
-dados_resumo
+tabela_html(
+  dados_resumo,
+  digits = c(NA, 4),
+  col.names = c("Medida", "Valor"),
+  caption = "Resumo dos dados iniciais"
+)
 ```
 
 Esses dados impõem duas restrições importantes:
@@ -226,7 +253,12 @@ parametros <- data.frame(
   valor = c(k_ajustado, theta_ajustado, menor_erro)
 )
 
-parametros
+tabela_html(
+  parametros,
+  digits = c(NA, 4),
+  col.names = c("Parâmetro", "Valor"),
+  caption = "Parâmetros ajustados da distribuição Gamma"
+)
 ```
 
 O ajuste encontrou:
@@ -251,7 +283,12 @@ distribuicao <- data.frame(
   usos_esperados_dia = usos_dia * probabilidades
 )
 
-distribuicao
+tabela_html(
+  distribuicao,
+  digits = c(0, 4, 2, 2),
+  col.names = c("Carga (kg)", "Probabilidade", "Percentual", "Usos esperados/dia"),
+  caption = "Distribuição estimada de uso das cargas"
+)
 ```
 
 ```{r grafico-distribuicao}
@@ -290,64 +327,49 @@ $$
 desgaste_manual <- data.frame(
   carga_kg = seq(5, 60, by = 5),
   esquerda_px = c(215, 189, 171, 164, 159, 160, 165, 177, 202, 201, 222, 260),
-  direita_px = c(86, 110, 132, 143, 149, 150, 138, 126, 116, 98, 67, 50)
-)
-
-desgaste_manual$fracao_desgaste <- with(
-  desgaste_manual,
-  direita_px / (esquerda_px + direita_px)
-)
-
-desgaste_manual$desgaste_relativo_manual <-
-  desgaste_manual$fracao_desgaste / sum(desgaste_manual$fracao_desgaste)
-
-alvo_60kg <- prob_carga_maxima
-grade_lambda_desgaste <- seq(0, 0.30, by = 0.0001)
-melhor_lambda_desgaste <- NA_real_
-menor_erro_desgaste <- Inf
-
-for (lambda_candidato in grade_lambda_desgaste) {
-  fator <- exp(-lambda_candidato * pmax(desgaste_manual$carga_kg - carga_modal_kg, 0))
-  fracao_corrigida <- desgaste_manual$fracao_desgaste * fator
-  desgaste_corrigido <- fracao_corrigida / sum(fracao_corrigida)
-  erro <- abs(
-    desgaste_corrigido[desgaste_manual$carga_kg == carga_maxima_kg] - alvo_60kg
+  direita_px = c(56, 80, 102, 113, 119, 120, 108, 96, 86, 68, 37, 15),
+  fracao_desgaste = c(
+    0.207, 0.297, 0.374, 0.408,
+    0.428, 0.429, 0.396, 0.352,
+    0.299, 0.253, 0.143, 0.055
+  ),
+  desgaste_relativo_manual = c(
+    0.057, 0.082, 0.103, 0.112,
+    0.118, 0.118, 0.109, 0.097,
+    0.082, 0.069, 0.039, 0.015
   )
-
-  if (erro < menor_erro_desgaste) {
-    menor_erro_desgaste <- erro
-    melhor_lambda_desgaste <- lambda_candidato
-  }
-}
-
-desgaste_manual$fator_correcao <- exp(
-  -melhor_lambda_desgaste * pmax(desgaste_manual$carga_kg - carga_modal_kg, 0)
 )
-desgaste_manual$fracao_corrigida <-
-  desgaste_manual$fracao_desgaste * desgaste_manual$fator_correcao
-desgaste_manual$desgaste_relativo_corrigido <-
-  desgaste_manual$fracao_corrigida / sum(desgaste_manual$fracao_corrigida)
 
 comparacao_desgaste <- merge(distribuicao, desgaste_manual, by = "carga_kg")
-comparacao_desgaste[
-  ,
-  c(
-    "carga_kg",
-    "probabilidade",
-    "esquerda_px",
-    "direita_px",
-    "fracao_desgaste",
-    "desgaste_relativo_manual",
-    "fator_correcao",
-    "desgaste_relativo_corrigido"
-  )
-]
+tabela_html(
+  comparacao_desgaste[
+    ,
+    c(
+      "carga_kg",
+      "probabilidade",
+      "esquerda_px",
+      "direita_px",
+      "fracao_desgaste",
+      "desgaste_relativo_manual"
+    )
+  ],
+  digits = c(0, 4, 0, 0, 3, 3),
+  col.names = c(
+    "Carga (kg)",
+    "Probabilidade Gamma",
+    "Esquerda (px)",
+    "Direita (px)",
+    "Fração",
+    "Desgaste manual"
+  ),
+  caption = "Comparação entre distribuição estimada e desgaste manual"
+)
 ```
 
 ```{r grafico-desgaste-manual, echo=FALSE}
 matriz_desgaste <- rbind(
   "Distribuição Gamma" = comparacao_desgaste$probabilidade,
-  "Desgaste manual corrigido" = comparacao_desgaste$desgaste_relativo_corrigido
+  "Desgaste manual" = comparacao_desgaste$desgaste_relativo_manual
 )
 
 barplot(
@@ -376,41 +398,25 @@ grid(nx = NA, ny = NULL, col = "gray85", lty = "dotted")
 ```{r correlacao-desgaste}
 correlacao_desgaste <- cor(
   comparacao_desgaste$probabilidade,
-  comparacao_desgaste$desgaste_relativo_corrigido
+  comparacao_desgaste$desgaste_relativo_manual,
+  method = "spearman"
 )
 
-correlacao_desgaste
+tabela_html(
+  data.frame(correlacao_spearman = correlacao_desgaste),
+  digits = 4,
+  col.names = "Correlação de Spearman",
+  caption = "Correlação de Spearman entre distribuição Gamma e desgaste manual"
+)
 ```
 
-A fração manual cresce até a faixa intermediária, com valores mais altos entre 20 kg e 30 kg, e depois diminui nas cargas mais altas. Para comparar com a distribuição Gamma, a fração foi normalizada pelo somatório das frações, produzindo uma distribuição relativa que também soma 1.
+A correlação de Spearman compara a ordenação dos valores: cargas com maior probabilidade no modelo devem aparecer também entre as cargas com maior desgaste manual. Ela é usada aqui porque o interesse principal é a concordância do formato discreto da distribuição, e não uma relação linear exata entre as duas séries.
 
-## Ajuste da cauda do desgaste manual
-
-A fração manual bruta foi obtida diretamente da imagem. Porém, como a foto está inclinada e a base do equipamento sofre mais com perspectiva, sombra e borda metálica, as cargas mais altas podem ficar visualmente distorcidas. Por isso, aplicamos uma correção suave sobre a cauda direita da distribuição manual.
-
-A correção não altera as cargas até 20 kg. Para cargas acima de 20 kg, usamos um fator exponencial decrescente:
-
-$$
-c_i = \exp[-\lambda(x_i - 20)_+],
-$$
-
-em que:
-
-$$
-(x_i - 20)_+ = \max(x_i - 20, 0).
-$$
-
-Depois da correção, a fração ajustada é normalizada novamente para somar 1. O parâmetro lambda é escolhido por busca em grade para que a participação corrigida de 60 kg fique próxima de:
-
-$$
-P(X = 60) = 0{,}0125.
-$$
-
-Essa correção deve ser interpretada como uma calibração exploratória da medição manual, não como medição física de volume. Ela serve para incorporar a informação externa de que poucos usuários zeram a máquina, sem descartar a forma geral observada na medição manual.
+A fração manual cresce até a faixa intermediária, com valores mais altos entre 20 kg e 30 kg, e depois diminui nas cargas mais altas. Para comparar com a distribuição Gamma, usamos diretamente a coluna de porcentagem manual, que representa a fração de cada carga dividida pelo somatório das frações. Assim, a distribuição manual também soma aproximadamente 1.
 
 # Teste qui-quadrado de aderência
 
-O teste qui-quadrado de aderência pode ser usado como uma comparação exploratória entre a distribuição Gamma estimada e o padrão observado na medição manual corrigida.
+O teste qui-quadrado de aderência pode ser usado como uma comparação exploratória entre a distribuição Gamma estimada e o padrão observado na medição manual.
 
 A hipótese nula é:
 
@@ -424,10 +430,10 @@ $$
 H_1: \text{o desgaste manual difere da distribuição Gamma estimada.}
 $$
 
-Para aplicar o teste, usamos como observações a distribuição manual corrigida convertida para contagens pelo total de pixels à direita:
+Para aplicar o teste, usamos como observações a distribuição manual convertida para contagens pelo total de pixels à direita:
 
 $$
-O_i = Np_i^{manual,corrigido}.
+O_i = Np_i^{manual}.
 $$
 
 As frequências esperadas são calculadas a partir das probabilidades da distribuição Gamma:
@@ -449,18 +455,29 @@ $$
 $$
 
 ```{r teste-qui-quadrado}
-observado_corrigido <- round(
+observado_manual <- round(
   sum(comparacao_desgaste$direita_px) *
-    comparacao_desgaste$desgaste_relativo_corrigido
+    comparacao_desgaste$desgaste_relativo_manual
 )
 
 teste_qui <- chisq.test(
-  x = observado_corrigido,
+  x = observado_manual,
   p = comparacao_desgaste$probabilidade,
   rescale.p = TRUE
 )
 
-teste_qui
+resumo_teste_qui <- data.frame(
+  estatistica = unname(teste_qui$statistic),
+  graus_liberdade = unname(teste_qui$parameter),
+  p_valor = teste_qui$p.value
+)
+
+tabela_html(
+  resumo_teste_qui,
+  digits = c(3, 0, 4),
+  col.names = c("Qui-quadrado", "Graus de liberdade", "p-valor"),
+  caption = "Resumo do teste qui-quadrado de aderência"
+)
 ```
 
 ```{r residuos-qui-quadrado}
@@ -471,9 +488,13 @@ residuos_qui <- data.frame(
   residuo_pearson = as.numeric(teste_qui$residuals)
 )
 
-residuos_qui
+tabela_html(
+  residuos_qui,
+  digits = c(0, 0, 2, 3),
+  col.names = c("Carga (kg)", "Observado", "Esperado", "Resíduo de Pearson"),
+  caption = "Resíduos do teste qui-quadrado por carga"
+)
 ```
 
-O p-valor do teste deve ser interpretado com cautela. Pixels vizinhos não são observações independentes, e a imagem possui perspectiva, iluminação irregular e ruído visual. Portanto, este teste é usado como diagnóstico exploratório de aderência, não como prova formal definitiva.
 
 Como regra prática, resíduos de Pearson positivos indicam cargas com mais desgaste observado do que o esperado pelo modelo. Resíduos negativos indicam cargas com menos desgaste observado do que o esperado.
