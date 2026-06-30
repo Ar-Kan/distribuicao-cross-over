@@ -1,0 +1,421 @@
+---
+title: "Distribuição estimada de uso das cargas no cross over"
+author: "Arquimedes Macedo"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    number_sections: true
+    theme: flatly
+    highlight: tango
+    df_print: paged
+    code_folding: hide
+    self_contained: true
+knit: >
+  (function(inputFile, encoding) {
+    rmarkdown::render(inputFile, encoding = encoding, output_file = "index.html")
+  })
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 8,
+  fig.height = 4.8
+)
+```
+
+# Objetivo
+
+Este relatório constrói uma primeira distribuição discreta de probabilidade para o uso das cargas de um equipamento de academia do tipo **cross over**.
+
+```{r imagem-referencia, echo=FALSE, out.width="49%", fig.show="hold", fig.cap="Imagem processada e região indicada para estimar desgaste aparente."}
+knitr::include_graphics(c(
+  "saidas/imagens_processadas/cross_over_(2)_processada.jpeg",
+  "imagens/image-linha-vermelha.png"
+))
+```
+
+O equipamento possui 12 placas de 5 kg. Assim, as cargas possíveis são:
+
+```{r cargas}
+cargas_kg <- seq(5, 60, by = 5)
+cargas_kg
+```
+
+A distribuição será usada como hipótese inicial para representar a frequência de uso das cargas. Em uma etapa posterior, essa distribuição poderá ser comparada com métricas extraídas das imagens dos pesos, usando o desgaste observado como referência empírica.
+
+# Dados observados
+
+Os dados iniciais disponíveis são:
+
+- a academia fica aberta 16 horas por dia;
+- estima-se que 15 pessoas por hora usam o equipamento;
+- portanto, o total estimado é de 240 usos por dia;
+- estima-se que 3 pessoas por dia usam a carga máxima;
+- a carga mais utilizada é estimada em 20 kg.
+
+```{r dados}
+horas_aberta <- 16
+usuarios_por_hora <- 15
+usos_dia <- horas_aberta * usuarios_por_hora
+
+usuarios_carga_maxima <- 3
+prob_carga_maxima <- usuarios_carga_maxima / usos_dia
+
+carga_modal_kg <- 20
+carga_maxima_kg <- 60
+
+dados_resumo <- data.frame(
+  medida = c(
+    "Horas aberta por dia",
+    "Usuários por hora",
+    "Usos estimados por dia",
+    "Usuários na carga máxima por dia",
+    "Probabilidade da carga máxima",
+    "Carga mais utilizada"
+  ),
+  valor = c(
+    horas_aberta,
+    usuarios_por_hora,
+    usos_dia,
+    usuarios_carga_maxima,
+    prob_carga_maxima,
+    carga_modal_kg
+  )
+)
+
+dados_resumo
+```
+
+Esses dados impõem duas restrições importantes:
+
+$$
+P(X = 60) = \frac{3}{240} = 0{,}0125
+$$
+
+e
+
+$$
+\operatorname{moda}(X) = 20.
+$$
+
+Entretanto, essas restrições não determinam uma distribuição única. Por isso, será usada uma família paramétrica conhecida e ajustada numericamente para respeitar as informações disponíveis.
+
+# Modelo Gamma discretizado
+
+Como as cargas são positivas e é natural esperar assimetria à direita, usamos uma distribuição Gamma como modelo base. A Gamma contínua tem suporte positivo e permite uma cauda à direita, o que combina melhor com o problema do que uma distribuição simétrica.
+
+A FDP da Gamma é:
+
+$$
+f(x; k, \theta) =
+\frac{1}{\Gamma(k)\theta^k}
+x^{k - 1}
+\exp\left(-\frac{x}{\theta}\right),
+\quad x > 0.
+$$
+
+Como o equipamento só permite cargas discretas, avaliamos a densidade apenas nas cargas possíveis:
+
+$$
+X \in \{5, 10, 15, \dots, 60\}.
+$$
+
+Definimos pesos relativos:
+
+$$
+w(x) = f(x; k, \theta)
+$$
+
+As probabilidades são obtidas normalizando os pesos:
+
+$$
+P(X = x) = \frac{w(x)}{\sum_j w(x_j)}.
+$$
+
+Para uma Gamma contínua com k maior que 1, a moda é:
+
+$$
+(k - 1)\theta.
+$$
+
+Como queremos que a carga mais usada seja 20 kg, impomos:
+
+$$
+(k - 1)\theta = 20.
+$$
+
+Logo:
+
+$$
+\theta = \frac{20}{k - 1}.
+$$
+
+Com isso, resta ajustar numericamente apenas k, de modo que:
+
+$$
+P(X = 60) = 0{,}0125.
+$$
+
+# Ajuste numérico
+
+```{r funcoes-modelo}
+# A Gamma contínua não é usada diretamente como probabilidade final.
+# Ela gera pesos relativos nas cargas discretas permitidas pelo equipamento.
+theta_por_k <- function(k, carga_modal) {
+  # Para k > 1, a moda contínua da Gamma é (k - 1) * theta.
+  # Rearranjando essa expressão, fixamos a moda contínua na carga modal
+  # informada e deixamos k como único parâmetro a ajustar.
+  carga_modal / (k - 1)
+}
+
+distribuicao_gamma_discreta <- function(k, cargas, carga_modal) {
+  theta <- theta_por_k(k, carga_modal)
+
+  # Avaliamos a densidade Gamma apenas nas 12 cargas possíveis.
+  # Depois normalizamos os pesos para que a soma seja exatamente 1.
+  pesos <- dgamma(cargas, shape = k, scale = theta)
+  pesos / sum(pesos)
+}
+
+```
+
+```{r ajuste}
+# Busca em grade para k. O intervalo começa acima de 1 porque a moda da
+# Gamma só é positiva e bem definida para k > 1.
+grade_k <- seq(1.01, 100, by = 0.001)
+
+k_ajustado <- NA_real_
+menor_erro <- Inf
+
+for (k_candidato in grade_k) {
+  probs <- distribuicao_gamma_discreta(
+    k = k_candidato,
+    cargas = cargas_kg,
+    carga_modal = carga_modal_kg
+  )
+
+  # O erro mede a distância entre a probabilidade modelada de 60 kg
+  # e a frequência observada de usuários que zeram a máquina.
+  erro <- abs(probs[cargas_kg == carga_maxima_kg] - prob_carga_maxima)
+
+  if (erro < menor_erro) {
+    menor_erro <- erro
+    k_ajustado <- k_candidato
+  }
+}
+
+theta_ajustado <- theta_por_k(
+  k = k_ajustado,
+  carga_modal = carga_modal_kg
+)
+
+probabilidades <- distribuicao_gamma_discreta(
+  k = k_ajustado,
+  cargas = cargas_kg,
+  carga_modal = carga_modal_kg
+)
+
+# Tabela pequena para documentar os parâmetros ajustados no relatório.
+parametros <- data.frame(
+  parametro = c("k", "theta", "erro_abs_P_60"),
+  valor = c(k_ajustado, theta_ajustado, menor_erro)
+)
+
+parametros
+```
+
+O ajuste encontrou:
+
+$$
+k = `r round(k_ajustado, 4)`
+$$
+
+e
+
+$$
+\theta = `r round(theta_ajustado, 4)`.
+$$
+
+# Distribuição estimada
+
+```{r tabela-distribuicao}
+distribuicao <- data.frame(
+  carga_kg = cargas_kg,
+  probabilidade = probabilidades,
+  percentual = 100 * probabilidades,
+  usos_esperados_dia = usos_dia * probabilidades
+)
+
+distribuicao
+```
+
+```{r grafico-distribuicao}
+cores <- ifelse(
+  distribuicao$carga_kg == carga_modal_kg,
+  "#2f6f73",
+  ifelse(distribuicao$carga_kg == carga_maxima_kg, "#a33f2f", "#5d6470")
+)
+
+barplot(
+  height = distribuicao$probabilidade,
+  names.arg = paste0(distribuicao$carga_kg, " kg"),
+  col = cores,
+  border = NA,
+  ylim = c(0, max(distribuicao$probabilidade) * 1.25),
+  ylab = "Probabilidade",
+  xlab = "Carga",
+  main = "Distribuição Gamma discretizada para uso das cargas"
+)
+
+grid(nx = NA, ny = NULL, col = "gray85", lty = "dotted")
+```
+
+# Comparação com desgaste manual
+
+A imagem está inclinada e possui perspectiva, iluminação irregular, rótulos brancos, furos e cabo atravessando a região de interesse. Por isso, a medição automática simples não foi usada como referência principal.
+
+Em vez disso, usamos a contagem manual de pixels à esquerda e à direita da linha vermelha. A fração de desgaste foi calculada por:
+
+$$
+\text{fração} =
+\frac{\text{Direita}}{\text{Esquerda} + \text{Direita}}.
+$$
+
+```{r desgaste-manual}
+desgaste_manual <- data.frame(
+  carga_kg = seq(5, 60, by = 5),
+  esquerda_px = c(215, 189, 171, 164, 159, 160, 165, 177, 202, 201, 222, 260),
+  direita_px = c(86, 110, 132, 143, 149, 150, 138, 126, 116, 98, 67, 50)
+)
+
+desgaste_manual$fracao_desgaste <- with(
+  desgaste_manual,
+  direita_px / (esquerda_px + direita_px)
+)
+
+desgaste_manual$desgaste_relativo_manual <-
+  desgaste_manual$fracao_desgaste / sum(desgaste_manual$fracao_desgaste)
+
+comparacao_desgaste <- merge(distribuicao, desgaste_manual, by = "carga_kg")
+comparacao_desgaste[
+  ,
+  c(
+    "carga_kg",
+    "probabilidade",
+    "esquerda_px",
+    "direita_px",
+    "fracao_desgaste",
+    "desgaste_relativo_manual"
+  )
+]
+```
+
+```{r grafico-desgaste-manual, echo=FALSE}
+matriz_desgaste <- rbind(
+  "Distribuição Gamma" = comparacao_desgaste$probabilidade,
+  "Desgaste manual normalizado" = comparacao_desgaste$desgaste_relativo_manual
+)
+
+barplot(
+  height = matriz_desgaste,
+  beside = TRUE,
+  names.arg = paste0(comparacao_desgaste$carga_kg, " kg"),
+  col = c("#2f6f73", "#b85c38"),
+  border = NA,
+  ylim = c(0, max(matriz_desgaste) * 1.25),
+  ylab = "Valor relativo",
+  xlab = "Carga",
+  main = "Distribuição calculada versus desgaste manual normalizado"
+)
+
+legend(
+  "topright",
+  legend = rownames(matriz_desgaste),
+  fill = c("#2f6f73", "#b85c38"),
+  border = NA,
+  bty = "n"
+)
+
+grid(nx = NA, ny = NULL, col = "gray85", lty = "dotted")
+```
+
+```{r correlacao-desgaste}
+correlacao_desgaste <- cor(
+  comparacao_desgaste$probabilidade,
+  comparacao_desgaste$desgaste_relativo_manual
+)
+
+correlacao_desgaste
+```
+
+A fração manual cresce até a faixa intermediária, com valores mais altos entre 20 kg e 30 kg, e depois diminui nas cargas mais altas. Para comparar com a distribuição Gamma, a fração foi normalizada pelo somatório das frações, produzindo uma distribuição relativa que também soma 1. Esse formato é compatível com a hipótese de maior uso em torno de 20 kg, ainda que a imagem não permita tratar a medição como volume físico de desgaste.
+
+# Teste qui-quadrado de aderência
+
+O teste qui-quadrado de aderência pode ser usado como uma comparação exploratória entre a distribuição Gamma estimada e o padrão observado na medição manual.
+
+A hipótese nula é:
+
+$$
+H_0: \text{o desgaste manual é compatível com a distribuição Gamma estimada.}
+$$
+
+A hipótese alternativa é:
+
+$$
+H_1: \text{o desgaste manual difere da distribuição Gamma estimada.}
+$$
+
+Para aplicar o teste, usamos como observações as contagens manuais de pixels à direita da linha vermelha:
+
+$$
+O_i = \text{Direita}_i.
+$$
+
+As frequências esperadas são calculadas a partir das probabilidades da distribuição Gamma:
+
+$$
+E_i = Np_i,
+$$
+
+onde:
+
+$$
+N = \sum_i O_i.
+$$
+
+A estatística do teste é:
+
+$$
+\chi^2 = \sum_i \frac{(O_i - E_i)^2}{E_i}.
+$$
+
+```{r teste-qui-quadrado}
+teste_qui <- chisq.test(
+  x = comparacao_desgaste$direita_px,
+  p = comparacao_desgaste$probabilidade,
+  rescale.p = TRUE
+)
+
+teste_qui
+```
+
+```{r residuos-qui-quadrado}
+residuos_qui <- data.frame(
+  carga_kg = comparacao_desgaste$carga_kg,
+  observado = as.numeric(teste_qui$observed),
+  esperado = as.numeric(teste_qui$expected),
+  residuo_pearson = as.numeric(teste_qui$residuals)
+)
+
+residuos_qui
+```
+
+O p-valor do teste deve ser interpretado com cautela. Pixels vizinhos não são observações independentes, e a imagem possui perspectiva, iluminação irregular e ruído visual. Portanto, este teste é usado como diagnóstico exploratório de aderência, não como prova formal definitiva.
+
+Como regra prática, resíduos de Pearson positivos indicam cargas com mais desgaste observado do que o esperado pelo modelo. Resíduos negativos indicam cargas com menos desgaste observado do que o esperado.
